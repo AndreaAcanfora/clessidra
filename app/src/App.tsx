@@ -25,6 +25,8 @@ interface Sheet {
   title: string;
   plan: RestorePlan;
   scope: Scope;
+  /** Set when the sheet undoes a burst, so its banner goes away once done. */
+  burst?: number;
 }
 
 interface Toast {
@@ -141,14 +143,14 @@ export function App({ api }: { api: Api }) {
     loadRoots();
   }
 
-  async function openPlan(title: string, t: number, scope: Scope) {
+  async function openPlan(title: string, t: number, scope: Scope, burst?: number) {
     if (rootId === null) return;
     const plan = await api.planRestore(rootId, t, scope);
-    setSheet({ title, plan, scope });
+    setSheet({ title, plan, scope, burst });
   }
 
   /** Apply a plan, then offer to undo it. */
-  async function apply(plan: RestorePlan, scope: Scope, done: string) {
+  async function apply(plan: RestorePlan, scope: Scope, done: string): Promise<boolean> {
     const before = Date.now();
     setBusy(true);
     try {
@@ -168,8 +170,10 @@ export function App({ api }: { api: Api }) {
           setToast({ text: "Undone." });
         },
       });
+      return true;
     } catch (e) {
       setToast({ text: `Could not restore: ${e}` });
+      return false;
     } finally {
       setBusy(false);
     }
@@ -242,7 +246,7 @@ export function App({ api }: { api: Api }) {
                 <button
                   className="btn primary"
                   onClick={() =>
-                    openPlan(`Undo the changes made at ${clock(banner.start)}`, banner.start - 1, { type: "paths", value: banner.paths })
+                    openPlan(`Undo the changes made at ${clock(banner.start)}`, banner.start - 1, { type: "paths", value: banner.paths }, banner.start)
                   }
                 >
                   Undo all of it
@@ -308,9 +312,10 @@ export function App({ api }: { api: Api }) {
           plan={sheet.plan}
           busy={busy}
           onCancel={() => setSheet(null)}
-          onApply={() =>
-            apply(sheet.plan, sheet.scope, `Restored ${plural(sheet.plan.write.length + sheet.plan.delete.length, "file")}.`)
-          }
+          onApply={async () => {
+            const ok = await apply(sheet.plan, sheet.scope, `Restored ${plural(sheet.plan.write.length + sheet.plan.delete.length, "file")}.`);
+            if (ok && sheet.burst !== undefined) setDismissed((d) => new Set(d).add(sheet.burst!));
+          }}
         />
       )}
       {settingsOpen && <SettingsSheet api={api} status={status} onClose={() => setSettingsOpen(false)} />}
