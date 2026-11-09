@@ -28,7 +28,10 @@ fn err(e: anyhow::Error) -> String {
 
 /// Run blocking store work off the main thread.
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> anyhow::Result<T> + Send + 'static) -> Res<T> {
-    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?.map_err(err)
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
 }
 
 #[derive(Serialize)]
@@ -158,8 +161,16 @@ async fn preview(app: State<'_, App>, hash: String) -> Res<Preview> {
         let bytes = store.blob(&hash)?;
         let size = bytes.len();
         let cut = &bytes[..size.min(MAX)];
-        let text = if cut.contains(&0) { None } else { Some(String::from_utf8_lossy(cut).into_owned()) };
-        Ok(Preview { text, truncated: size > MAX, size })
+        let text = if cut.contains(&0) {
+            None
+        } else {
+            Some(String::from_utf8_lossy(cut).into_owned())
+        };
+        Ok(Preview {
+            text,
+            truncated: size > MAX,
+            size,
+        })
     })
     .await
 }
@@ -225,11 +236,11 @@ fn start_daemon(handle: &AppHandle) {
             if b.deleted >= 5 || b.paths.len() >= 25 {
                 let folder = {
                     let mut names = names.lock().unwrap();
-                    if !names.contains_key(&b.root_id) {
-                        if let Ok(r) = h.state::<App>().store.root(b.root_id) {
-                            let name = r.dir().file_name().map(|n| n.to_string_lossy().into_owned());
-                            names.insert(b.root_id, name.unwrap_or(r.path));
-                        }
+                    if !names.contains_key(&b.root_id)
+                        && let Ok(r) = h.state::<App>().store.root(b.root_id)
+                    {
+                        let name = r.dir().file_name().map(|n| n.to_string_lossy().into_owned());
+                        names.insert(b.root_id, name.unwrap_or(r.path));
                     }
                     names.get(&b.root_id).cloned().unwrap_or_default()
                 };
@@ -274,7 +285,11 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--background"]),
         ))
-        .manage(App { store, daemon: Mutex::new(None), daemon_error: Mutex::new(None) })
+        .manage(App {
+            store,
+            daemon: Mutex::new(None),
+            daemon_error: Mutex::new(None),
+        })
         .setup(|app| {
             let handle = app.handle().clone();
             start_daemon(&handle);
@@ -294,16 +309,21 @@ pub fn run() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, e| {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = e {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = e
+                    {
                         show_window(tray.app_handle());
                     }
                 })
                 .build(app)?;
 
-            if std::env::args().any(|a| a == "--background") {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.hide();
-                }
+            if std::env::args().any(|a| a == "--background")
+                && let Some(w) = app.get_webview_window("main")
+            {
+                let _ = w.hide();
             }
             let _ = handle.emit("started", now_ms());
             Ok(())
