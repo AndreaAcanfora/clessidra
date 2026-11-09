@@ -54,4 +54,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy -p clessidra-app --all-targets -- -D warnings
-      - run: cargo build -p clessidra-app
+      # `tauri build` (not plain cargo) also checks that the npm packages and the Rust crates of
+      # Tauri are on the same minor version, which is what release builds fail on otherwise.
+      - run: pnpm tauri build --no-bundle
+        working-directory: app
