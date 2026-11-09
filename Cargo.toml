@@ -9,7 +9,7 @@ license = "MIT"
 authors = ["Andrea Acanfora"]
 repository = "https://github.com/AndreaAcanfora/clessidra"
 homepage = "https://github.com/AndreaAcanfora/clessidra"
-rust-version = "1.89"
+rust-version = "1.90"
 
 [workspace.dependencies]
 clessidra-core = { path = "crates/clessidra-core", version = "0.1.0" }

@@ -63,7 +63,7 @@ pnpm tauri dev      # run it
 pnpm tauri build    # build an installer for this platform
 ```
 
-Requires Rust 1.89+, Node and pnpm, plus the [Tauri prerequisites](https://tauri.app/start/prerequisites/)
+Requires Rust 1.90+, Node and pnpm, plus the [Tauri prerequisites](https://tauri.app/start/prerequisites/)
 for your platform.
 
 ## The command line
