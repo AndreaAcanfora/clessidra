@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#26374B"/><stop offset="1" stop-color="#16212E"/>
+    </linearGradient>
+    <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F0C75E"/><stop offset="1" stop-color="#D49A2A"/>
+    </linearGradient>
+    <clipPath id="glass"><path d="M330 250 H694 C694 400 560 470 530 512 C560 554 694 624 694 774 H330 C330 624 464 554 494 512 C464 470 330 400 330 250 Z"/></clipPath>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <g clip-path="url(#glass)">
+    <rect x="300" y="380" width="424" height="140" fill="url(#sand)"/>
+    <path d="M330 774 C400 690 470 640 512 640 C554 640 624 690 694 774 Z" fill="url(#sand)"/>
+    <rect x="505" y="500" width="14" height="160" fill="#E8B84A"/>
+  </g>
+  <path d="M330 250 H694 C694 400 560 470 530 512 C560 554 694 624 694 774 H330 C330 624 464 554 494 512 C464 470 330 400 330 250 Z" fill="none" stroke="#DCE6EF" stroke-width="22" stroke-linejoin="round" opacity="0.92"/>
+  <rect x="282" y="214" width="460" height="48" rx="24" fill="#DCE6EF"/>
+  <rect x="282" y="762" width="460" height="48" rx="24" fill="#DCE6EF"/>
+</svg>
