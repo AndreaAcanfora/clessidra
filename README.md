@@ -8,6 +8,7 @@ Every version of every file in the folders you choose, kept quietly in the backg
 Drag a timeline back to any moment and put a file, a folder, or a whole burst of changes
 back the way it was. The restore is recorded too, so it can be undone like anything else.
 
+[![CI](https://github.com/AndreaAcanfora/clessidra/actions/workflows/ci.yml/badge.svg)](https://github.com/AndreaAcanfora/clessidra/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/rust-2024-CE422B?logo=rust&logoColor=white)](Cargo.toml)
 [![Tauri](https://img.shields.io/badge/tauri-2-24C8DB?logo=tauri&logoColor=white)](app/src-tauri/tauri.conf.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
