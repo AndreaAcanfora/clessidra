@@ -458,19 +458,24 @@ impl Store {
 
     /// Take the initial copy of every file in a newly added folder.
     pub fn snapshot(&self, root: &Root) -> Result<usize> {
-        Ok(self.scan(root, "", Origin::Baseline)?.len())
+        Ok(self.scan(root, "", Origin::Baseline, None)?.len())
     }
 
     /// Compare a folder with its history and record whatever changed while nobody was watching.
     pub fn catch_up(&self, root: &Root) -> Result<Vec<Version>> {
-        self.scan(root, "", Origin::CatchUp)
+        self.scan(root, "", Origin::CatchUp, None)
     }
 
     /// Record the current state of one path (a file, a directory or something that is gone).
     /// Returns the versions created; none when nothing changed.
     pub fn record(&self, root: &Root, rel: &str, origin: Origin) -> Result<Vec<Version>> {
+        self.record_at(root, rel, origin, None)
+    }
+
+    /// Like [`Store::record`], for a change observed at `seen` (ms) rather than right now.
+    pub fn record_at(&self, root: &Root, rel: &str, origin: Origin, seen: Option<i64>) -> Result<Vec<Version>> {
         if rel.is_empty() {
-            return self.scan(root, "", origin);
+            return self.scan(root, "", origin, seen);
         }
         let abs = absolute(root.dir(), rel);
         let filter = self.filter(root);
@@ -479,16 +484,19 @@ impl Store {
                 if filter.ignores(&abs, true) {
                     return Ok(Vec::new());
                 }
-                self.scan(root, rel, origin)
+                self.scan(root, rel, origin, seen)
             }
             Ok(m) if m.is_file() => {
                 if filter.ignores(&abs, false) {
                     return Ok(Vec::new());
                 }
-                Ok(self.record_file(root, rel, &abs, &m, origin)?.into_iter().collect())
+                Ok(self
+                    .record_file(root, rel, &abs, &m, origin, seen)?
+                    .into_iter()
+                    .collect())
             }
             Ok(_) => Ok(Vec::new()), // symlinks, sockets, fifos
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => self.record_gone(root, rel, origin),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => self.record_gone(root, rel, origin, seen),
             Err(e) => Err(e.into()),
         }
     }
@@ -500,6 +508,7 @@ impl Store {
         abs: &Path,
         meta: &fs::Metadata,
         origin: Origin,
+        seen: Option<i64>,
     ) -> Result<Option<Version>> {
         let size = meta.len() as i64;
         if size > self.settings().max_file_mb * 1024 * 1024 {
@@ -509,32 +518,35 @@ impl Store {
         let mode = mode_of(meta);
         let last = self.latest(root.id, rel)?;
         let alive = last.as_ref().filter(|v| v.kind != Kind::Del);
-        if let Some(l) = alive {
-            if l.size == size && l.mtime == mtime && l.mode == mode {
-                return Ok(None);
-            }
+        if let Some(l) = alive
+            && l.size == size
+            && l.mtime == mtime
+            && l.mode == mode
+        {
+            return Ok(None);
         }
         let bytes = match fs::read(abs) {
             Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(self.record_gone(root, rel, origin)?.into_iter().next());
+                return Ok(self.record_gone(root, rel, origin, seen)?.into_iter().next());
             }
             Err(e) => return Err(e.into()),
         };
         let hash = blake3::hash(&bytes).to_hex().to_string();
-        if let Some(l) = alive {
-            if l.hash.as_deref() == Some(hash.as_str()) && l.mode == mode {
-                // Touched but not changed: remember the new mtime so we do not read it again.
-                self.db()
-                    .execute("UPDATE versions SET mtime = ?2 WHERE id = ?1", params![l.id, mtime])?;
-                return Ok(None);
-            }
+        if let Some(l) = alive
+            && l.hash.as_deref() == Some(hash.as_str())
+            && l.mode == mode
+        {
+            // Touched but not changed: remember the new mtime so we do not read it again.
+            self.db()
+                .execute("UPDATE versions SET mtime = ?2 WHERE id = ?1", params![l.id, mtime])?;
+            return Ok(None);
         }
         let now = now_ms();
         let ts = match origin {
             // A change found by a scan happened at its mtime, as far as we can tell.
             Origin::CatchUp | Origin::Baseline => mtime.min(now),
-            _ => now,
+            _ => seen.unwrap_or(now).min(now),
         };
         let ts = ts.max(last.as_ref().map_or(0, |l| l.ts + 1));
         let kind = if alive.is_some() { Kind::Mod } else { Kind::Add };
@@ -581,18 +593,26 @@ impl Store {
     }
 
     /// `rel` is gone: mark it, and every live file under it, as deleted.
-    fn record_gone(&self, root: &Root, rel: &str, origin: Origin) -> Result<Vec<Version>> {
+    fn record_gone(&self, root: &Root, rel: &str, origin: Origin, seen: Option<i64>) -> Result<Vec<Version>> {
         let mut out = Vec::new();
         for v in self.tree_at(root.id, rel, i64::MAX)? {
             if fs::symlink_metadata(absolute(root.dir(), &v.path)).is_err() {
-                out.push(self.insert_deletion(root.id, &v.path, v.ts, origin)?);
+                out.push(self.insert_deletion(root.id, &v.path, v.ts, origin, seen)?);
             }
         }
         Ok(out)
     }
 
-    fn insert_deletion(&self, root_id: i64, path: &str, after: i64, origin: Origin) -> Result<Version> {
-        let ts = now_ms().max(after + 1);
+    fn insert_deletion(
+        &self,
+        root_id: i64,
+        path: &str,
+        after: i64,
+        origin: Origin,
+        seen: Option<i64>,
+    ) -> Result<Version> {
+        let now = now_ms();
+        let ts = seen.unwrap_or(now).min(now).max(after + 1);
         let db = self.db();
         db.execute(
             "INSERT INTO versions(root_id, path, ts, kind, origin) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -613,10 +633,10 @@ impl Store {
     }
 
     /// Walk a directory inside a root and record every file that changed, appeared or vanished.
-    fn scan(&self, root: &Root, sub: &str, origin: Origin) -> Result<Vec<Version>> {
+    fn scan(&self, root: &Root, sub: &str, origin: Origin, seen: Option<i64>) -> Result<Vec<Version>> {
         let base = absolute(root.dir(), sub);
         let filter = self.filter(root);
-        let mut seen = HashSet::new();
+        let mut found = HashSet::new();
         let mut out = Vec::new();
         if base.is_dir() {
             let walker = WalkDir::new(&base)
@@ -641,17 +661,17 @@ impl Store {
                     Ok(m) => m,
                     Err(_) => continue,
                 };
-                match self.record_file(root, &rel, entry.path(), &meta, origin) {
+                match self.record_file(root, &rel, entry.path(), &meta, origin, seen) {
                     Ok(Some(v)) => out.push(v),
                     Ok(None) => {}
                     Err(e) => log::warn!("{}: {e:#}", entry.path().display()),
                 }
-                seen.insert(rel);
+                found.insert(rel);
             }
         }
         for v in self.tree_at(root.id, sub, i64::MAX)? {
-            if !seen.contains(&v.path) && fs::symlink_metadata(absolute(root.dir(), &v.path)).is_err() {
-                out.push(self.insert_deletion(root.id, &v.path, v.ts, origin)?);
+            if !found.contains(&v.path) && fs::symlink_metadata(absolute(root.dir(), &v.path)).is_err() {
+                out.push(self.insert_deletion(root.id, &v.path, v.ts, origin, seen)?);
             }
         }
         Ok(out)
@@ -874,7 +894,7 @@ impl Store {
         let root = self.root(root_id)?;
         match scope {
             Scope::All => {
-                self.scan(&root, "", Origin::CatchUp)?;
+                self.scan(&root, "", Origin::CatchUp, None)?;
             }
             Scope::Prefix(p) => {
                 self.record(&root, p, Origin::CatchUp)?;

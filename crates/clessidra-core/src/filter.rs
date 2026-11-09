@@ -55,10 +55,10 @@ impl Filter {
             let _ = b.add_line(None, p);
         }
         let custom = root.join(IGNORE_FILE);
-        if custom.is_file() {
-            if let Some(e) = b.add(&custom) {
-                log::warn!("{}: {e}", custom.display());
-            }
+        if custom.is_file()
+            && let Some(e) = b.add(&custom)
+        {
+            log::warn!("{}: {e}", custom.display());
         }
         let rules = b.build().unwrap_or_else(|_| Gitignore::empty());
         Filter {
@@ -70,10 +70,10 @@ impl Filter {
 
     /// Whether an absolute path inside the root should be left alone.
     pub fn ignores(&self, abs: &Path, is_dir: bool) -> bool {
-        if let Some(ex) = &self.exclude {
-            if abs.starts_with(ex) {
-                return true;
-            }
+        if let Some(ex) = &self.exclude
+            && abs.starts_with(ex)
+        {
+            return true;
         }
         if abs == self.root {
             return false;

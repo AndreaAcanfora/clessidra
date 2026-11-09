@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
@@ -27,7 +27,7 @@ const MAX_WAIT: Duration = Duration::from_secs(3);
 const TICK: Duration = Duration::from_millis(150);
 /// Bursts: at least this many files, with no gap longer than this between changes.
 pub const BURST_MIN_FILES: usize = 10;
-pub const BURST_GAP_MS: i64 = 2_000;
+pub const BURST_GAP_MS: i64 = 1_000;
 const PRUNE_EVERY: Duration = Duration::from_secs(3600);
 
 #[derive(Debug, Clone)]
@@ -181,7 +181,7 @@ impl Worker {
         }
     }
 
-    fn root_of(&self, path: &PathBuf) -> Option<(&Root, String)> {
+    fn root_of(&self, path: &Path) -> Option<(&Root, String)> {
         self.watched
             .values()
             .filter_map(|r| relative(r.dir(), path).map(|rel| (r, rel)))
@@ -240,12 +240,16 @@ impl Worker {
             .collect();
         let mut by_root: HashMap<i64, Vec<Version>> = HashMap::new();
         for key in ready {
-            self.pending.remove(&key);
+            let Some((_, last)) = self.pending.remove(&key) else {
+                continue;
+            };
             let (root_id, rel) = key;
+            // Timestamp the change when it happened, not when the quiet period ended.
+            let seen = now_ms() - last.elapsed().as_millis() as i64;
             let Some(root) = self.watched.get(&root_id) else {
                 continue;
             };
-            match self.store.record(root, &rel, Origin::Live) {
+            match self.store.record_at(root, &rel, Origin::Live, Some(seen)) {
                 Ok(v) => by_root.entry(root_id).or_default().extend(v),
                 Err(e) => (self.on_event)(Event::Error(format!("{rel}: {e:#}"))),
             }
