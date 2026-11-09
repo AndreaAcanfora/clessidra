@@ -1,0 +1,30 @@
+[package]
+name = "clessidra-core"
+description = "The engine behind clessidra: watch folders, keep every version of every file, rewind them to any moment."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+keywords = ["undo", "backup", "versioning", "filesystem", "history"]
+categories = ["filesystem"]
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+blake3 = "1"
+zstd = "0.14"
+rusqlite = { version = "0.41", features = ["bundled"] }
+notify = "8"
+ignore = "0.4"
+walkdir = "2"
+similar = "2"
+directories = "6"
+log = "0.4"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[dev-dependencies]
+tempfile = "3"

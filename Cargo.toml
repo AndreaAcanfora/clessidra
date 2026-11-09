@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = ["crates/clessidra-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Andrea Acanfora"]
+repository = "https://github.com/AndreaAcanfora/clessidra"
+homepage = "https://github.com/AndreaAcanfora/clessidra"
+rust-version = "1.89"
+
+[workspace.dependencies]
+clessidra-core = { path = "crates/clessidra-core", version = "0.1.0" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
