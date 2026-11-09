@@ -40,6 +40,16 @@ so "five minutes ago" is always a place you can go back to.
   `.clessidraignore` file at the root of a watched folder, with `.gitignore` syntax.
 - **Everything is local.** The history lives on your machine and never goes anywhere else.
 
+## Install
+
+Download the desktop app (macOS, Windows, Linux) or the command line binary from the
+[latest release](https://github.com/AndreaAcanfora/clessidra/releases/latest). The builds are
+not signed yet: on macOS, if the app is reported as damaged, run
+`xattr -dr com.apple.quarantine /Applications/clessidra.app`; on Windows, choose *More info*
+then *Run anyway*.
+
+To build from source instead, see below.
+
 ## The desktop app
 
 A Tauri app with a window over the history and an icon in the menu bar / system tray. It runs the

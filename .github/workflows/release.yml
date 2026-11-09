@@ -1,0 +1,138 @@
+name: Release
+
+# Push a tag like v0.1.0 to publish installers of the desktop app and binaries of the CLI.
+# The release is created as a draft, filled by the build jobs, and published only if all of them pass.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches every version in the repository
+        run: |
+          want=${GITHUB_REF_NAME#v}
+          cargo_v=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          tauri_v=$(jq -r .version app/src-tauri/tauri.conf.json)
+          npm_v=$(jq -r .version app/package.json)
+          for v in "Cargo.toml:$cargo_v" "tauri.conf.json:$tauri_v" "package.json:$npm_v"; do
+            test "${v#*:}" = "$want" || { echo "${v%%:*} says ${v#*:}, tag is $GITHUB_REF_NAME" >&2; exit 1; }
+          done
+          grep -q "^## \[$want\]" CHANGELOG.md || { echo "CHANGELOG.md has no section for $want" >&2; exit 1; }
+      - name: Create a draft release with the notes from CHANGELOG.md
+        id: create
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          awk "/^## \\[${GITHUB_REF_NAME#v}\\]/{flag=1; next} /^## \\[/{flag=0} flag" CHANGELOG.md > notes.md
+          cat docs/release-footer.md >> notes.md
+          gh release create "$GITHUB_REF_NAME" --draft --title "clessidra $GITHUB_REF_NAME" --notes-file notes.md
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | .id")
+          echo "release_id=$id" >> "$GITHUB_OUTPUT"
+
+  app:
+    needs: draft
+    name: app (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin
+          - name: Linux
+            os: ubuntu-22.04
+            targets: ""
+            args: ""
+          - name: Windows
+            os: windows-latest
+            targets: ""
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tauri system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: app
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          projectPath: app
+          tauriScript: pnpm tauri
+          releaseId: ${{ needs.draft.outputs.release_id }}
+          args: ${{ matrix.args }}
+
+  cli:
+    needs: draft
+    name: cli (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - run: cargo build --release --locked -p clessidra --target ${{ matrix.target }}
+      - name: Package and upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name=clessidra-$GITHUB_REF_NAME-${{ matrix.target }}
+          mkdir "$name"
+          cp README.md LICENSE "$name/"
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp target/${{ matrix.target }}/release/clessidra.exe "$name/"
+            7z a "$name.zip" "$name" >/dev/null
+            asset=$name.zip
+          else
+            cp target/${{ matrix.target }}/release/clessidra "$name/"
+            tar czf "$name.tar.gz" "$name"
+            asset=$name.tar.gz
+          fi
+          gh release upload "$GITHUB_REF_NAME" "$asset"
+
+  publish:
+    needs: [draft, app, cli]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
