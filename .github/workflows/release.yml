@@ -82,7 +82,7 @@ jobs:
         with:
           targets: ${{ matrix.targets }}
       - uses: Swatinem/rust-cache@v2
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
